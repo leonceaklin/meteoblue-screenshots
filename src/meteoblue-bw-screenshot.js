@@ -41,25 +41,21 @@
   await new Promise(r => { map.once('idle', r); setTimeout(r, 5000); });
 
   // Read the composited canvas via captureStream (includes the custom particle layer drawn outside mapbox's render event).
-  // Keep reading live frames for a while so animated layers (wind particles) rebuild after the resize; use the last one.
+  // Played through a <video> element (works in Chrome and Firefox). Let it run a while so animated layers (wind particles)
+  // rebuild after the resize, then take the next fresh frame.
   // No triggerRepaint() here: forced repaints make the particle layer re-take its plain-map background instead of drawing particles.
-  const track = src.captureStream(30).getVideoTracks()[0];
-  const reader = new MediaStreamTrackProcessor({ track }).readable.getReader();
-  let frame = null;
-  const until = Date.now() + 2500;
-  while (Date.now() < until || !frame) {
-    const { value } = await reader.read();
-    frame?.close();
-    frame = value;
-  }
-  reader.cancel(); track.stop();
+  const stream = src.captureStream(30);
+  const video = document.createElement('video');
+  video.muted = true; video.srcObject = stream; await video.play();
+  await new Promise(r => setTimeout(r, 2500));
+  if (video.requestVideoFrameCallback) await new Promise(r => { video.requestVideoFrameCallback(r); setTimeout(r, 1000); });
 
   const out = document.createElement('canvas');
   out.width = W; out.height = H;
   const ctx = out.getContext('2d');
   ctx.filter = 'grayscale(1)';
-  ctx.drawImage(frame, 0, 0, W, H);
-  frame.close();
+  ctx.drawImage(video, 0, 0, W, H);
+  stream.getTracks().forEach(t => t.stop());
   container.style.cssText = oldCss;
   map.resize();
   window.dispatchEvent(new Event('resize'));
